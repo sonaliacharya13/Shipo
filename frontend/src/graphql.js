@@ -1,13 +1,13 @@
 import { gql } from '@apollo/client/core';
 
-export const RELEASE_STEPS = [
+export const DEFAULT_CHECKLIST_STEPS = [
   { id: 1, label: "Complete development" },
   { id: 2, label: "Run tests" },
   { id: 3, label: "Fix bugs" },
   { id: 4, label: "Create production build" },
-  { id: 5, label: "Update documentation" },
-  { id: 6, label: "Deploy application" },
-  { id: 7, label: "Verify deployment" },
+  { id: 5, label: "Deploy application" },
+  { id: 6, label: "Verify deployment" },
+  { id: 7, label: "Update documentation" },
   { id: 8, label: "Announce release" },
 ];
 

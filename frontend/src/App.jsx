@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@apollo/client/react';
 import { 
   GET_RELEASES, 
@@ -6,7 +6,7 @@ import {
   UPDATE_CHECKLIST, 
   UPDATE_ADDITIONAL_INFO, 
   DELETE_RELEASE, 
-  RELEASE_STEPS 
+  DEFAULT_CHECKLIST_STEPS 
 } from './graphql';
 
 const ICON_STYLES = [
@@ -24,8 +24,25 @@ export default function App() {
   const [updateAdditionalInfo] = useMutation(UPDATE_ADDITIONAL_INFO);
   const [deleteRelease] = useMutation(DELETE_RELEASE);
 
+  // App Layout States
+  const [theme, setTheme] = useState(localStorage.getItem('shipo-theme') || 'light');
   const [selectedReleaseId, setSelectedReleaseId] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [isForceEditing, setIsForceEditing] = useState(false);
+  
+  // Custom steps storage map { [releaseId]: [{ id: 1, label: '...' }] }
+  const [customStepsMap, setCustomStepsMap] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('shipo-steps-map') || '{}');
+    } catch {
+      return {};
+    }
+  });
+
+  const [newStepLabel, setNewStepLabel] = useState('');
+
+  // Note edit state
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesText, setNotesText] = useState('');
 
@@ -34,10 +51,30 @@ export default function App() {
   const [date, setDate] = useState('');
   const [additionalInfo, setAdditionalInfo] = useState('');
 
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('shipo-theme', theme);
+  }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem('shipo-steps-map', JSON.stringify(customStepsMap));
+  }, [customStepsMap]);
+
+  const toggleTheme = () => {
+    setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
+  };
+
   const releases = data?.releases || [];
-  
-  // Set default selected release if none selected
   const activeRelease = releases.find(r => r.id === selectedReleaseId) || releases[0] || null;
+
+  // Retrieve steps for release (custom or default)
+  const getReleaseSteps = (releaseId) => {
+    if (!releaseId) return DEFAULT_CHECKLIST_STEPS;
+    return customStepsMap[releaseId] || DEFAULT_CHECKLIST_STEPS;
+  };
+
+  const currentSteps = activeRelease ? getReleaseSteps(activeRelease.id) : DEFAULT_CHECKLIST_STEPS;
+  const isCompleted = activeRelease?.status === 'DONE';
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -53,7 +90,10 @@ export default function App() {
     setShowCreateModal(false);
     await refetch();
     if (res?.data?.createRelease?.id) {
-      setSelectedReleaseId(res.data.createRelease.id);
+      const newId = res.data.createRelease.id;
+      setSelectedReleaseId(newId);
+      setCustomStepsMap(prev => ({ ...prev, [newId]: [...DEFAULT_CHECKLIST_STEPS] }));
+      setIsForceEditing(false);
     }
   };
 
@@ -69,6 +109,41 @@ export default function App() {
     refetch();
   };
 
+  const handleAddCustomStep = (e) => {
+    e.preventDefault();
+    if (!newStepLabel.trim() || !activeRelease) return;
+
+    const existing = getReleaseSteps(activeRelease.id);
+    const nextId = existing.length > 0 ? Math.max(...existing.map(s => s.id)) + 1 : 1;
+    const updatedList = [...existing, { id: nextId, label: newStepLabel.trim() }];
+
+    setCustomStepsMap(prev => ({
+      ...prev,
+      [activeRelease.id]: updatedList
+    }));
+    setNewStepLabel('');
+  };
+
+  const handleRemoveStep = async (stepId) => {
+    if (!activeRelease) return;
+    const existing = getReleaseSteps(activeRelease.id);
+    const updatedList = existing.filter(s => s.id !== stepId);
+
+    // Also remove from completedSteps if it was checked
+    const completed = activeRelease.completedSteps || [];
+    if (completed.includes(stepId)) {
+      await updateChecklist({
+        variables: { id: activeRelease.id, completedSteps: completed.filter(id => id !== stepId) }
+      });
+      refetch();
+    }
+
+    setCustomStepsMap(prev => ({
+      ...prev,
+      [activeRelease.id]: updatedList
+    }));
+  };
+
   const handleSaveNotes = async () => {
     if (!activeRelease) return;
     await updateAdditionalInfo({
@@ -81,6 +156,11 @@ export default function App() {
   const handleDelete = async (id) => {
     if (window.confirm('Delete this release?')) {
       await deleteRelease({ variables: { id } });
+      setCustomStepsMap(prev => {
+        const copy = { ...prev };
+        delete copy[id];
+        return copy;
+      });
       setSelectedReleaseId(null);
       refetch();
     }
@@ -98,7 +178,6 @@ export default function App() {
       <aside className="sidebar">
         <div>
           <div className="sidebar-logo-area">
-            <span className="rocket-icon">🚀</span>
             <div className="brand-text">
               <h2>Shipo</h2>
               <p>Release Checklist</p>
@@ -107,7 +186,7 @@ export default function App() {
 
           <nav className="sidebar-nav">
             <button className="nav-item active">
-              <span>🏠</span> Home
+              <span>📋</span> All Releases
             </button>
             <button className="nav-item" onClick={() => setShowCreateModal(true)}>
               <span>➕</span> Create Release
@@ -116,13 +195,13 @@ export default function App() {
         </div>
 
         <div className="sidebar-footer">
-          <button className="nav-item">
+          <button className="nav-item" onClick={() => setShowSettingsModal(true)}>
             <span>⚙️</span> Settings
           </button>
         </div>
       </aside>
 
-      {/* 2. Main Center Content */}
+      {/* 2. Main Workspace */}
       <main className="main-workspace">
         <section className="releases-view">
           <div className="view-header">
@@ -131,18 +210,21 @@ export default function App() {
               <p>Track and manage your software releases</p>
             </div>
             <button className="btn-create-top" onClick={() => setShowCreateModal(true)}>
-              <span>+</span> Create Release
+              + Create Release
             </button>
           </div>
 
-          {loading && <p style={{ color: '#64748b' }}>Loading releases...</p>}
-          {error && <p style={{ color: '#ef4444' }}>Error connecting to backend.</p>}
+          {loading && <p style={{ color: 'var(--text-muted)' }}>Loading releases...</p>}
+          {error && <p style={{ color: 'var(--danger)' }}>Error connecting to backend.</p>}
 
           <div className="release-card-list">
             {releases.map((release, idx) => {
               const iconMeta = ICON_STYLES[idx % ICON_STYLES.length];
-              const completedCount = release.completedSteps?.length || 0;
-              const percent = (completedCount / RELEASE_STEPS.length) * 100;
+              const stepsForThis = getReleaseSteps(release.id);
+              const completedCount = (release.completedSteps || []).filter(id => 
+                stepsForThis.some(s => s.id === id)
+              ).length;
+              const percent = stepsForThis.length > 0 ? (completedCount / stepsForThis.length) * 100 : 0;
               const formattedStatus = formatStatus(release.status);
               const isSelected = activeRelease?.id === release.id;
 
@@ -152,6 +234,7 @@ export default function App() {
                   className={`release-list-card ${isSelected ? 'selected' : ''}`}
                   onClick={() => {
                     setSelectedReleaseId(release.id);
+                    setIsForceEditing(false);
                     setEditingNotes(false);
                   }}
                 >
@@ -169,7 +252,7 @@ export default function App() {
                   <div className="card-right">
                     <div className="card-progress-col">
                       <span className={`status-pill ${formattedStatus}`}>{formattedStatus}</span>
-                      <span className="card-step-text">{completedCount} / {RELEASE_STEPS.length} steps completed</span>
+                      <span className="card-step-text">{completedCount} / {stepsForThis.length} steps completed</span>
                       <div className="progress-track">
                         <div className="progress-fill" style={{ width: `${percent}%` }} />
                       </div>
@@ -200,21 +283,40 @@ export default function App() {
                   </span>
                 </div>
                 <p>Due: {activeRelease.date}</p>
-                <p style={{ color: '#94a3b8' }}>{activeRelease.additionalInfo || 'No notes'}</p>
+                <p style={{ color: 'var(--text-muted)' }}>{activeRelease.additionalInfo || 'No notes'}</p>
               </div>
             </div>
+
+            {/* Completion Banner if Done */}
+            {isCompleted && !isForceEditing && (
+              <div className="completion-banner">
+                <div className="completion-banner-text">
+                  <span>✓</span> Release Completed
+                </div>
+                <button 
+                  className="btn-reopen" 
+                  onClick={() => setIsForceEditing(true)}
+                >
+                  Edit Checklist
+                </button>
+              </div>
+            )}
 
             {/* Checklist Header & Progress */}
             <div>
               <div className="checklist-title-row">
                 <h4>Release Checklist</h4>
-                <span>{activeRelease.completedSteps?.length || 0} / {RELEASE_STEPS.length} completed</span>
+                <span>
+                  {(activeRelease.completedSteps || []).filter(id => currentSteps.some(s => s.id === id)).length} / {currentSteps.length} completed
+                </span>
               </div>
               <div className="progress-track" style={{ width: '100%', height: '8px' }}>
                 <div 
                   className="progress-fill" 
                   style={{ 
-                    width: `${((activeRelease.completedSteps?.length || 0) / RELEASE_STEPS.length) * 100}%` 
+                    width: `${currentSteps.length > 0 
+                      ? ((activeRelease.completedSteps || []).filter(id => currentSteps.some(s => s.id === id)).length / currentSteps.length) * 100 
+                      : 0}%` 
                   }} 
                 />
               </div>
@@ -222,25 +324,64 @@ export default function App() {
 
             {/* Checklist Steps */}
             <div className="checklist-container">
-              {RELEASE_STEPS.map((step) => {
+              {currentSteps.map((step, index) => {
                 const isChecked = activeRelease.completedSteps?.includes(step.id);
 
                 return (
                   <div 
                     key={step.id} 
                     className="check-item-row"
-                    onClick={() => handleToggleStep(activeRelease, step.id)}
+                    onClick={() => {
+                      if (!isCompleted || isForceEditing) {
+                        handleToggleStep(activeRelease, step.id);
+                      }
+                    }}
+                    style={{
+                      cursor: (isCompleted && !isForceEditing) ? 'default' : 'pointer',
+                      opacity: (isCompleted && !isForceEditing) ? 0.75 : 1
+                    }}
                   >
                     <div className={`check-box-custom ${isChecked ? 'checked' : ''}`}>
                       {isChecked && '✓'}
                     </div>
-                    <span className="step-num">{step.id}.</span>
+                    <span className="step-num">{index + 1}.</span>
                     <span className={`check-item-text ${isChecked ? 'completed' : ''}`}>
                       {step.label}
                     </span>
+
+                    {/* Remove checklist step button */}
+                    {(!isCompleted || isForceEditing) && (
+                      <button 
+                        type="button"
+                        className="btn-remove-step"
+                        title="Remove step"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveStep(step.id);
+                        }}
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
                 );
               })}
+
+              {/* Add Custom Step Form */}
+              {(!isCompleted || isForceEditing) && (
+                <form onSubmit={handleAddCustomStep} className="checklist-add-row">
+                  <input
+                    type="text"
+                    className="input-add-step"
+                    placeholder="+ Add custom checklist step..."
+                    value={newStepLabel}
+                    onChange={(e) => setNewStepLabel(e.target.value)}
+                  />
+                  <button type="submit" className="btn-add-step">
+                    Add
+                  </button>
+                </form>
+              )}
             </div>
 
             {/* Additional Information Section */}
@@ -262,7 +403,7 @@ export default function App() {
                 </div>
               ) : (
                 <div className="detail-info-box">
-                  {activeRelease.additionalInfo || 'First public release'}
+                  {activeRelease.additionalInfo || 'No additional information.'}
                 </div>
               )}
 
@@ -274,13 +415,13 @@ export default function App() {
                     setNotesText(activeRelease.additionalInfo || '');
                   }}
                 >
-                  ✏️ Edit Information
+                  Edit Information
                 </button>
                 <button 
                   className="btn-outline-danger" 
                   onClick={() => handleDelete(activeRelease.id)}
                 >
-                  🗑️ Delete Release
+                  Delete Release
                 </button>
               </div>
             </div>
@@ -339,6 +480,40 @@ export default function App() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 5. Settings Modal */}
+      {showSettingsModal && (
+        <div className="modal-overlay" onClick={() => setShowSettingsModal(false)}>
+          <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Settings</h3>
+              <button className="btn-close" onClick={() => setShowSettingsModal(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>Appearance</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    Switch between Light and Dark interface
+                  </div>
+                </div>
+                <button 
+                  className="btn-cancel" 
+                  onClick={toggleTheme}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                >
+                  {theme === 'light' ? '🌙 Dark Mode' : '☀️️ Light Mode'}
+                </button>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-submit" onClick={() => setShowSettingsModal(false)}>
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}

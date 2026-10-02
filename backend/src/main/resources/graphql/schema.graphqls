@@ -1,0 +1,32 @@
+enum ReleaseStatus {
+  PLANNED
+  ONGOING
+  DONE
+}
+
+type Release {
+  id: ID!
+  name: String!
+  date: String!
+  additionalInfo: String
+  completedSteps: [Int!]!
+  status: ReleaseStatus!
+}
+
+input CreateReleaseInput {
+  name: String!
+  date: String!
+  additionalInfo: String
+}
+
+type Query {
+  releases: [Release!]!
+  release(id: ID!): Release
+}
+
+type Mutation {
+  createRelease(input: CreateReleaseInput!): Release!
+  updateChecklist(id: ID!, completedSteps: [Int!]!): Release!
+  updateAdditionalInfo(id: ID!, additionalInfo: String): Release!
+  deleteRelease(id: ID!): Boolean!
+}

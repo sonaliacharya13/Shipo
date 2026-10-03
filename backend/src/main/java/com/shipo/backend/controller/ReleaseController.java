@@ -23,8 +23,8 @@ public class ReleaseController {
     }
 
     @QueryMapping
-    public List<Release> releases() {
-        return repository.findAll();
+    public List<Release> releases(@Argument String userId) {
+        return repository.findByUserId(userId);
     }
 
     @QueryMapping
@@ -37,6 +37,7 @@ public class ReleaseController {
         Release release = new Release();
         release.setName((String) input.get("name"));
         release.setDate(LocalDate.parse((String) input.get("date")));
+        release.setUserId((String) input.get("userId"));
         if (input.containsKey("additionalInfo") && input.get("additionalInfo") != null) {
             release.setAdditionalInfo((String) input.get("additionalInfo"));
         }

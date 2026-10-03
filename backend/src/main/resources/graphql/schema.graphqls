@@ -11,16 +11,18 @@ type Release {
   additionalInfo: String
   completedSteps: [Int!]!
   status: ReleaseStatus!
+  userId: String!
 }
 
 input CreateReleaseInput {
   name: String!
   date: String!
   additionalInfo: String
+  userId: String!
 }
 
 type Query {
-  releases: [Release!]!
+  releases(userId: String!): [Release!]!
   release(id: ID!): Release
 }
 

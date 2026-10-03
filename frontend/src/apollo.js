@@ -1,10 +1,9 @@
-import { ApolloClient, InMemoryCache, HttpLink } from '@apollo/client/core';
-
-const httpLink = new HttpLink({
-  uri: import.meta.env.VITE_GRAPHQL_URI || 'http://localhost:8080/graphql',
-});
+// src/apollo.js
+import { ApolloClient, InMemoryCache, HttpLink } from '@apollo/client';
 
 export const client = new ApolloClient({
-  link: httpLink,
+  link: new HttpLink({
+    uri: 'https://giants-connectors-stable-equality.trycloudflare.com/graphql',
+  }),
   cache: new InMemoryCache(),
 });

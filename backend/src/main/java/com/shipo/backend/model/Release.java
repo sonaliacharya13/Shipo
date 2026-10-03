@@ -24,6 +24,9 @@ public class Release {
     @Column(columnDefinition = "TEXT")
     private String additionalInfo;
 
+    @Column(nullable = false)
+    private String userId;
+
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "release_completed_steps", joinColumns = @JoinColumn(name = "release_id"))
     @Column(name = "step_number")
@@ -79,5 +82,13 @@ public class Release {
 
     public void setCompletedSteps(List<Integer> completedSteps) {
         this.completedSteps = completedSteps;
+    }
+
+    public String getUserId() {
+        return userId;
+    }
+
+    public void setUserId(String userId) {
+        this.userId = userId;
     }
 }

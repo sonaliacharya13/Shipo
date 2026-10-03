@@ -12,14 +12,15 @@ export const DEFAULT_CHECKLIST_STEPS = [
 ];
 
 export const GET_RELEASES = gql`
-  query GetReleases {
-    releases {
+  query GetReleases($userId: String!) {
+    releases(userId: $userId) {
       id
       name
       date
       additionalInfo
       completedSteps
       status
+      userId
     }
   }
 `;
@@ -33,6 +34,7 @@ export const CREATE_RELEASE = gql`
       additionalInfo
       completedSteps
       status
+      userId
     }
   }
 `;
